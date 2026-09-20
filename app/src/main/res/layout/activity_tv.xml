@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#0a0a1a">
+
+    <LinearLayout android:id="@+id/setupLayout"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:gravity="center" android:padding="48dp">
+        <TextView android:text="🎮" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:textSize="72sp"
+            android:layout_gravity="center" android:layout_marginBottom="8dp"/>
+        <TextView android:text="GRIMPAD TV" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:textSize="40sp"
+            android:textStyle="bold" android:textColor="#10b981"
+            android:letterSpacing="0.15" android:layout_gravity="center"
+            android:fontFamily="monospace"/>
+        <TextView android:text="VIRTUAL XBOX CONTROLLER HUB"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="13sp" android:textColor="#555555" android:letterSpacing="0.2"
+            android:layout_gravity="center" android:layout_marginBottom="36dp"
+            android:fontFamily="monospace"/>
+        <LinearLayout android:layout_width="440dp" android:layout_height="wrap_content"
+            android:orientation="vertical" android:background="@drawable/card_empty"
+            android:padding="28dp" android:layout_gravity="center">
+            <TextView android:text="RELAY SERVER ADDRESS"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="11sp" android:textColor="#555555"
+                android:layout_marginBottom="6dp" android:fontFamily="monospace"/>
+            <EditText android:id="@+id/serverInput"
+                android:layout_width="match_parent" android:layout_height="48dp"
+                android:hint="192.168.1.x:8765" android:text="localhost:8765"
+                android:textSize="16sp" android:textColor="#ffffff"
+                android:hintTextColor="#555555" android:background="@drawable/input_bg"
+                android:padding="12dp" android:inputType="textUri"
+                android:fontFamily="monospace" android:singleLine="true"/>
+            <TextView android:text="MOBILE CONTROLLER URL"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textSize="11sp" android:textColor="#555555"
+                android:layout_marginTop="16dp" android:layout_marginBottom="6dp"
+                android:fontFamily="monospace"/>
+            <EditText android:id="@+id/mobileUrlInput"
+                android:layout_width="match_parent" android:layout_height="48dp"
+                android:hint="https://grimpad.vercel.app"
+                android:text="https://grimpad.vercel.app"
+                android:textSize="16sp" android:textColor="#ffffff"
+                android:hintTextColor="#555555" android:background="@drawable/input_bg"
+                android:padding="12dp" android:inputType="textUri"
+                android:fontFamily="monospace" android:singleLine="true"
+                android:layout_marginBottom="20dp"/>
+            <Button android:id="@+id/connectBtn"
+                android:layout_width="match_parent" android:layout_height="52dp"
+                android:text="CONNECT TO RELAY" android:textSize="15sp"
+                android:textStyle="bold" android:textColor="#000000"
+                android:backgroundTint="#10b981" android:fontFamily="monospace"/>
+        </LinearLayout>
+        <TextView android:text="Run grimpad-server on PC or VPS then enter its IP above"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="12sp" android:textColor="#444444"
+            android:layout_gravity="center" android:layout_marginTop="20dp"
+            android:fontFamily="monospace"/>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/dashLayout"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:padding="18dp" android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical">
+                <TextView android:text="GRIMPAD TV" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:textSize="24sp"
+                    android:textStyle="bold" android:textColor="#10b981"
+                    android:fontFamily="monospace"/>
+                <TextView android:text="VIRTUAL XBOX CONTROLLER HUB"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textSize="9sp" android:textColor="#444444" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <TextView android:id="@+id/wsStatusText"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="○ Connecting..." android:textSize="12sp" android:textColor="#ef4444"
+                android:background="@drawable/card_empty" android:padding="10dp"
+                android:layout_marginEnd="12dp" android:fontFamily="monospace"/>
+            <Button android:id="@+id/settingsBtn"
+                android:layout_width="wrap_content" android:layout_height="36dp"
+                android:text="Settings" android:textSize="11sp" android:textColor="#888888"
+                android:backgroundTint="#1a1a2e" android:fontFamily="monospace"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="12dp"
+            android:gravity="center_vertical">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/card_empty"
+                android:padding="12dp" android:layout_marginEnd="8dp">
+                <TextView android:id="@+id/connectedCount" android:text="0"
+                    android:textSize="26sp" android:textStyle="bold" android:textColor="#00c8ff"
+                    android:fontFamily="monospace" android:layout_gravity="center"/>
+                <TextView android:text="CONNECTED" android:textSize="9sp"
+                    android:textColor="#555555" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/card_empty"
+                android:padding="12dp" android:layout_marginEnd="8dp">
+                <TextView android:id="@+id/seriesCount" android:text="0"
+                    android:textSize="26sp" android:textStyle="bold" android:textColor="#10b981"
+                    android:fontFamily="monospace" android:layout_gravity="center"/>
+                <TextView android:text="SERIES X/S" android:textSize="9sp"
+                    android:textColor="#555555" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/card_empty"
+                android:padding="12dp" android:layout_marginEnd="8dp">
+                <TextView android:id="@+id/x360Count" android:text="0"
+                    android:textSize="26sp" android:textStyle="bold" android:textColor="#f5c518"
+                    android:fontFamily="monospace" android:layout_gravity="center"/>
+                <TextView android:text="XBOX 360" android:textSize="9sp"
+                    android:textColor="#555555" android:fontFamily="monospace"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical"
+                android:background="@drawable/card_empty" android:padding="12dp"
+                android:gravity="end">
+                <TextView android:id="@+id/serverAddrText" android:text="—"
+                    android:textSize="12sp" android:textColor="#555555" android:fontFamily="monospace"/>
+                <TextView android:text="RELAY SERVER" android:textSize="9sp"
+                    android:textColor="#333333" android:fontFamily="monospace"/>
+            </LinearLayout>
+        </LinearLayout>
+        <TextView android:text="PLAYER SLOTS  (1 - 15)"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="10sp" android:textColor="#444444" android:letterSpacing="0.2"
+            android:layout_marginBottom="8dp" android:fontFamily="monospace"/>
+        <LinearLayout android:id="@+id/slotsContainer"
+            android:layout_width="match_parent" android:layout_height="0dp"
+            android:layout_weight="1" android:orientation="vertical"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="@drawable/card_empty"
+            android:padding="10dp" android:gravity="center_vertical"
+            android:layout_marginTop="10dp">
+            <TextView android:text="📱" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:textSize="18sp"
+                android:layout_marginEnd="10dp"/>
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:textSize="11sp" android:textColor="#555555"
+                android:fontFamily="monospace"
+                android:text="Players open mobile URL on phone then JOIN GAME then enter relay IP"/>
+            <TextView android:id="@+id/mobileUrlDisplay"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="https://grimpad.vercel.app" android:textSize="12sp"
+                android:textColor="#00c8ff" android:textStyle="bold"
+                android:fontFamily="monospace" android:layout_marginStart="12dp"/>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
