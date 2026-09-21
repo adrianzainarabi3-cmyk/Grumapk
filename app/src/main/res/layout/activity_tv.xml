@@ -30,7 +30,7 @@
                 android:layout_width="match_parent" android:layout_height="48dp"
                 android:hint="192.168.1.x:8765" android:text="localhost:8765"
                 android:textSize="16sp" android:textColor="#ffffff"
-                android:hintTextColor="#555555" android:background="@drawable/input_bg"
+                 android:background="@drawable/input_bg"
                 android:padding="12dp" android:inputType="textUri"
                 android:fontFamily="monospace" android:singleLine="true"/>
             <TextView android:text="MOBILE CONTROLLER URL"
@@ -43,7 +43,7 @@
                 android:hint="https://grimpad.vercel.app"
                 android:text="https://grimpad.vercel.app"
                 android:textSize="16sp" android:textColor="#ffffff"
-                android:hintTextColor="#555555" android:background="@drawable/input_bg"
+                 android:background="@drawable/input_bg"
                 android:padding="12dp" android:inputType="textUri"
                 android:fontFamily="monospace" android:singleLine="true"
                 android:layout_marginBottom="20dp"/>
