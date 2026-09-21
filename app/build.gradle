@@ -1,11 +1,15 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+}
 android {
     namespace 'com.grimpad.tv'
     compileSdk 34
     defaultConfig {
         applicationId "com.grimpad.tv"
-        minSdk 21; targetSdk 34
-        versionCode 1; versionName "1.0"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
     }
     buildTypes {
         release {
@@ -13,7 +17,9 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
-        debug { signingConfig signingConfigs.debug }
+        debug {
+            signingConfig signingConfigs.debug
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -22,7 +28,6 @@ android {
 }
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.leanback:leanback:1.0.0'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
