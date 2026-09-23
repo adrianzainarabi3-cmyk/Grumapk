@@ -27,8 +27,8 @@ public class TVActivity extends Activity {
     private LinearLayout setupLayout, dashLayout, slotsContainer;
     private EditText serverInput, mobileUrlInput;
     private Button connectBtn;
-    private TextView wsStatusText, connectedCount, seriesCount, x360Count,
-                     serverAddrText, mobileUrlDisplay;
+    private TextView wsStatusText, connectedCount, seriesCount,
+                     x360Count, serverAddrText, mobileUrlDisplay;
 
     private final View[]     cardViews = new View[15];
     private final TextView[] numViews  = new TextView[15];
@@ -37,9 +37,10 @@ public class TVActivity extends Activity {
 
     private OkHttpClient httpClient;
     private WebSocket ws;
-    private String currentUrl = "";
+    private String currentUrl = "ws://localhost:8765";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable reconnectTask;
+    private boolean destroyed = false;
 
     static class Slot {
         boolean active, is360;
@@ -58,36 +59,47 @@ public class TVActivity extends Activity {
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         setContentView(R.layout.activity_tv);
+
         for (int i = 0; i < 15; i++) slots[i] = new Slot();
-        setupLayout      = findViewById(R.id.setupLayout);
-        dashLayout       = findViewById(R.id.dashLayout);
-        slotsContainer   = findViewById(R.id.slotsContainer);
-        serverInput      = findViewById(R.id.serverInput);
-        mobileUrlInput   = findViewById(R.id.mobileUrlInput);
-        connectBtn       = findViewById(R.id.connectBtn);
-        wsStatusText     = findViewById(R.id.wsStatusText);
-        connectedCount   = findViewById(R.id.connectedCount);
-        seriesCount      = findViewById(R.id.seriesCount);
-        x360Count        = findViewById(R.id.x360Count);
-        serverAddrText   = findViewById(R.id.serverAddrText);
+
+        setupLayout    = findViewById(R.id.setupLayout);
+        dashLayout     = findViewById(R.id.dashLayout);
+        slotsContainer = findViewById(R.id.slotsContainer);
+        serverInput    = findViewById(R.id.serverInput);
+        mobileUrlInput = findViewById(R.id.mobileUrlInput);
+        connectBtn     = findViewById(R.id.connectBtn);
+        wsStatusText   = findViewById(R.id.wsStatusText);
+        connectedCount = findViewById(R.id.connectedCount);
+        seriesCount    = findViewById(R.id.seriesCount);
+        x360Count      = findViewById(R.id.x360Count);
+        serverAddrText = findViewById(R.id.serverAddrText);
         mobileUrlDisplay = findViewById(R.id.mobileUrlDisplay);
+
         buildSlotGrid();
+
         connectBtn.setOnClickListener(v -> startDash());
-        findViewById(R.id.settingsBtn).setOnClickListener(v -> goSetup());
+        Button settingsBtn = findViewById(R.id.settingsBtn);
+        if (settingsBtn != null)
+            settingsBtn.setOnClickListener(v -> goSetup());
+
         httpClient = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
             .pingInterval(15, TimeUnit.SECONDS)
             .build();
 
-        // Auto-connect to localhost after 1 second
-        mainHandler.postDelayed(() -> {
-            serverInput.setText("localhost:8765");
-            startDash();
-        }, 1000);
+        // Auto-connect to localhost after 1.5s
+        mainHandler.postDelayed(this::autoConnect, 1500);
+    }
+
+    private void autoConnect() {
+        if (destroyed) return;
+        if (serverInput != null) serverInput.setText("localhost:8765");
+        startDash();
     }
 
     private void buildSlotGrid() {
+        if (slotsContainer == null) return;
         slotsContainer.removeAllViews();
         int dp = (int) getResources().getDisplayMetrics().density;
         for (int row = 0; row < 3; row++) {
@@ -137,9 +149,7 @@ public class TVActivity extends Activity {
                     LinearLayout.LayoutParams.WRAP_CONTENT);
                 ap.setMargins(0, 6*dp, 0, 0);
                 axes.setLayoutParams(ap);
-                card.addView(num);
-                card.addView(type);
-                card.addView(axes);
+                card.addView(num); card.addView(type); card.addView(axes);
                 rowL.addView(card);
                 cardViews[i]=card; numViews[i]=num;
                 typeViews[i]=type; axesViews[i]=axes;
@@ -149,70 +159,79 @@ public class TVActivity extends Activity {
     }
 
     private void startDash() {
-        String addr = serverInput.getText().toString().trim();
+        if (destroyed) return;
+        String addr = "";
+        if (serverInput != null) addr = serverInput.getText().toString().trim();
         if (addr.isEmpty()) addr = "localhost:8765";
-        String mu = mobileUrlInput.getText().toString().trim();
+        String mu = "";
+        if (mobileUrlInput != null) mu = mobileUrlInput.getText().toString().trim();
         if (mu.isEmpty()) mu = "https://grimpad.vercel.app";
         currentUrl = "ws://" + addr;
-        serverAddrText.setText(addr);
-        mobileUrlDisplay.setText(mu);
-        setupLayout.setVisibility(View.GONE);
-        dashLayout.setVisibility(View.VISIBLE);
+        if (serverAddrText != null) serverAddrText.setText(addr);
+        if (mobileUrlDisplay != null) mobileUrlDisplay.setText(mu);
+        if (setupLayout != null) setupLayout.setVisibility(View.GONE);
+        if (dashLayout != null) dashLayout.setVisibility(View.VISIBLE);
         wsConnect();
     }
 
     private void goSetup() {
         disconnectWS();
-        setupLayout.setVisibility(View.VISIBLE);
-        dashLayout.setVisibility(View.GONE);
+        if (setupLayout != null) setupLayout.setVisibility(View.VISIBLE);
+        if (dashLayout != null) dashLayout.setVisibility(View.GONE);
     }
 
     private void wsConnect() {
-        setStatus("Connecting to " + currentUrl.replace("ws://","") + "...", false);
-        ws = httpClient.newWebSocket(
-            new Request.Builder().url(currentUrl).build(),
-            new WebSocketListener() {
-                @Override public void onOpen(@NonNull WebSocket w, @NonNull Response r) {
-                    w.send("{\"type\":\"dashboard_listen\"}");
-                    mainHandler.post(() -> setStatus(
-                        "● Connected — " + currentUrl.replace("ws://",""), true));
-                }
-                @Override public void onMessage(@NonNull WebSocket w, @NonNull String text) {
-                    try {
-                        JSONObject m = new JSONObject(text);
-                        if ("gamepad_state".equals(m.getString("type"))) {
-                            JSONArray gps = m.getJSONArray("gamepads");
-                            mainHandler.post(() -> updateSlots(gps));
-                        }
-                    } catch (Exception ignored) {}
-                }
-                @Override public void onClosed(@NonNull WebSocket w, int c, @NonNull String r) {
-                    mainHandler.post(() -> onDisc());
-                }
-                @Override public void onFailure(@NonNull WebSocket w, @NonNull Throwable t,
-                        Response r) {
-                    mainHandler.post(() -> {
-                        setStatus("○ Server not found — retrying...", false);
-                        onDisc();
-                    });
-                }
-            });
+        if (destroyed) return;
+        setStatus("Connecting...", false);
+        try {
+            ws = httpClient.newWebSocket(
+                new Request.Builder().url(currentUrl).build(),
+                new WebSocketListener() {
+                    @Override public void onOpen(@NonNull WebSocket w, @NonNull Response r) {
+                        w.send("{\"type\":\"dashboard_listen\"}");
+                        mainHandler.post(() -> setStatus("● " + currentUrl.replace("ws://",""), true));
+                    }
+                    @Override public void onMessage(@NonNull WebSocket w, @NonNull String text) {
+                        try {
+                            JSONObject m = new JSONObject(text);
+                            if ("gamepad_state".equals(m.optString("type"))) {
+                                JSONArray gps = m.getJSONArray("gamepads");
+                                mainHandler.post(() -> updateSlots(gps));
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                    @Override public void onClosed(@NonNull WebSocket w, int c, @NonNull String r) {
+                        mainHandler.post(() -> onDisc());
+                    }
+                    @Override public void onFailure(@NonNull WebSocket w, @NonNull Throwable t,
+                            Response r) {
+                        mainHandler.post(() -> {
+                            setStatus("○ Server not found — retrying...", false);
+                            onDisc();
+                        });
+                    }
+                });
+        } catch (Exception e) {
+            setStatus("○ Error: " + e.getMessage(), false);
+            onDisc();
+        }
     }
 
     private void onDisc() {
-        setStatus("○ Disconnected — retrying...", false);
+        if (destroyed) return;
         clearSlots();
         if (reconnectTask != null) mainHandler.removeCallbacks(reconnectTask);
         reconnectTask = this::wsConnect;
-        mainHandler.postDelayed(reconnectTask, 3000);
+        mainHandler.postDelayed(reconnectTask, 4000);
     }
 
     private void disconnectWS() {
         if (reconnectTask != null) mainHandler.removeCallbacks(reconnectTask);
-        if (ws != null) { ws.cancel(); ws = null; }
+        if (ws != null) { try { ws.cancel(); } catch (Exception ignored) {} ws = null; }
     }
 
     private void setStatus(String t, boolean ok) {
+        if (wsStatusText == null) return;
         wsStatusText.setText(t);
         wsStatusText.setTextColor(ok ? 0xFF10B981 : 0xFFEF4444);
     }
@@ -230,7 +249,7 @@ public class TVActivity extends Activity {
                 int idx = gp.getInt("index");
                 if (idx < 0 || idx >= 15) continue;
                 slots[idx].active = true;
-                slots[idx].is360  = gp.optString("id","").contains("028e");
+                slots[idx].is360 = gp.optString("id","").contains("028e");
                 JSONArray ax = gp.optJSONArray("axes");
                 if (ax != null && ax.length() >= 4) {
                     slots[idx].lx=(float)ax.getDouble(0);
@@ -245,6 +264,7 @@ public class TVActivity extends Activity {
     }
 
     private void updateCard(int i) {
+        if (cardViews[i] == null) return;
         Slot s = slots[i];
         if (s.active) {
             cardViews[i].setBackgroundResource(
@@ -271,21 +291,24 @@ public class TVActivity extends Activity {
         for (Slot s : slots) {
             if (s.active) { total++; if(s.is360) x360++; else series++; }
         }
-        connectedCount.setText(String.valueOf(total));
-        seriesCount.setText(String.valueOf(series));
-        x360Count.setText(String.valueOf(x360));
+        if (connectedCount != null) connectedCount.setText(String.valueOf(total));
+        if (seriesCount != null) seriesCount.setText(String.valueOf(series));
+        if (x360Count != null) x360Count.setText(String.valueOf(x360));
     }
 
     @Override public boolean onKeyDown(int k, KeyEvent e) {
-        if (k==KeyEvent.KEYCODE_BACK && dashLayout.getVisibility()==View.VISIBLE) {
+        if (k==KeyEvent.KEYCODE_BACK &&
+            dashLayout != null &&
+            dashLayout.getVisibility()==View.VISIBLE) {
             goSetup(); return true;
         }
         return super.onKeyDown(k, e);
     }
 
     @Override protected void onDestroy() {
+        destroyed = true;
         super.onDestroy();
         disconnectWS();
-        httpClient.dispatcher().executorService().shutdown();
+        try { httpClient.dispatcher().executorService().shutdown(); } catch (Exception ignored) {}
     }
 }
