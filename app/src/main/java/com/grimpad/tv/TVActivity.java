@@ -8,8 +8,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -24,33 +23,25 @@ import okhttp3.WebSocketListener;
 
 public class TVActivity extends Activity {
 
-    private LinearLayout setupLayout, dashLayout, slotsContainer;
-    private EditText serverInput, mobileUrlInput;
-    private Button connectBtn;
-    private TextView wsStatusText, connectedCount, seriesCount,
-                     x360Count, serverAddrText, mobileUrlDisplay;
-
-    private final View[]     cardViews = new View[15];
-    private final TextView[] numViews  = new TextView[15];
-    private final TextView[] typeViews = new TextView[15];
-    private final TextView[] axesViews = new TextView[15];
-
-    private OkHttpClient httpClient;
+    private TextView statusView;
+    private TextView countView;
+    private final TextView[] slotViews = new TextView[15];
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private OkHttpClient client;
     private WebSocket ws;
-    private String currentUrl = "ws://localhost:8765";
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private Runnable reconnectTask;
     private boolean destroyed = false;
+    private Runnable retryTask;
 
     static class Slot {
-        boolean active, is360;
-        float lx, ly, rx, ry;
+        boolean active; boolean is360;
     }
     private final Slot[] slots = new Slot[15];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Fullscreen
         getWindow().addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
             WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -58,187 +49,191 @@ public class TVActivity extends Activity {
             View.SYSTEM_UI_FLAG_FULLSCREEN |
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-        setContentView(R.layout.activity_tv);
 
         for (int i = 0; i < 15; i++) slots[i] = new Slot();
 
-        setupLayout    = findViewById(R.id.setupLayout);
-        dashLayout     = findViewById(R.id.dashLayout);
-        slotsContainer = findViewById(R.id.slotsContainer);
-        serverInput    = findViewById(R.id.serverInput);
-        mobileUrlInput = findViewById(R.id.mobileUrlInput);
-        connectBtn     = findViewById(R.id.connectBtn);
-        wsStatusText   = findViewById(R.id.wsStatusText);
-        connectedCount = findViewById(R.id.connectedCount);
-        seriesCount    = findViewById(R.id.seriesCount);
-        x360Count      = findViewById(R.id.x360Count);
-        serverAddrText = findViewById(R.id.serverAddrText);
-        mobileUrlDisplay = findViewById(R.id.mobileUrlDisplay);
+        // Build UI entirely in Java - no XML dependency
+        buildUI();
 
-        buildSlotGrid();
-
-        connectBtn.setOnClickListener(v -> startDash());
-        Button settingsBtn = findViewById(R.id.settingsBtn);
-        if (settingsBtn != null)
-            settingsBtn.setOnClickListener(v -> goSetup());
-
-        httpClient = new OkHttpClient.Builder()
+        client = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
             .pingInterval(15, TimeUnit.SECONDS)
             .build();
 
-        // Auto-connect to localhost after 1.5s
-        mainHandler.postDelayed(this::autoConnect, 1500);
+        // Auto connect after 500ms
+        h.postDelayed(this::connect, 500);
     }
 
-    private void autoConnect() {
-        if (destroyed) return;
-        if (serverInput != null) serverInput.setText("localhost:8765");
-        startDash();
-    }
-
-    private void buildSlotGrid() {
-        if (slotsContainer == null) return;
-        slotsContainer.removeAllViews();
+    private void buildUI() {
         int dp = (int) getResources().getDisplayMetrics().density;
+
+        // Root
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF060612);
+        root.setPadding(20*dp, 16*dp, 20*dp, 16*dp);
+
+        // Header row
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams headerP = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        headerP.setMargins(0, 0, 0, 16*dp);
+        header.setLayoutParams(headerP);
+
+        // Title
+        TextView title = new TextView(this);
+        title.setText("GRIMPAD TV");
+        title.setTextSize(28);
+        title.setTextColor(0xFF10B981);
+        title.setTypeface(android.graphics.Typeface.MONOSPACE,
+            android.graphics.Typeface.BOLD);
+        title.setLetterSpacing(0.12f);
+        LinearLayout.LayoutParams titleP = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        title.setLayoutParams(titleP);
+        header.addView(title);
+
+        // Status
+        statusView = new TextView(this);
+        statusView.setText("○ Connecting...");
+        statusView.setTextSize(12);
+        statusView.setTextColor(0xFFEF4444);
+        statusView.setTypeface(android.graphics.Typeface.MONOSPACE);
+        statusView.setBackgroundColor(0xFF1A1A2E);
+        statusView.setPadding(12*dp, 6*dp, 12*dp, 6*dp);
+        header.addView(statusView);
+
+        root.addView(header);
+
+        // Connected count
+        countView = new TextView(this);
+        countView.setText("0 / 15 controllers connected");
+        countView.setTextSize(11);
+        countView.setTextColor(0xFF2A4A3A);
+        countView.setTypeface(android.graphics.Typeface.MONOSPACE);
+        LinearLayout.LayoutParams countP = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        countP.setMargins(0, 0, 0, 12*dp);
+        countView.setLayoutParams(countP);
+        root.addView(countView);
+
+        // Slot grid - 3 rows of 5
+        LinearLayout.LayoutParams gridP = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setLayoutParams(gridP);
+
         for (int row = 0; row < 3; row++) {
             LinearLayout rowL = new LinearLayout(this);
             rowL.setOrientation(LinearLayout.HORIZONTAL);
-            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams rowP = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-            rp.setMargins(0, 0, 0, row < 2 ? 8*dp : 0);
-            rowL.setLayoutParams(rp);
+            rowP.setMargins(0, 0, 0, row < 2 ? 8*dp : 0);
+            rowL.setLayoutParams(rowP);
+
             for (int col = 0; col < 5; col++) {
                 int i = row * 5 + col;
-                LinearLayout card = new LinearLayout(this);
-                card.setOrientation(LinearLayout.VERTICAL);
-                card.setGravity(Gravity.CENTER);
-                card.setPadding(8*dp, 8*dp, 8*dp, 8*dp);
-                card.setBackgroundResource(R.drawable.card_empty);
-                LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-                cp.setMargins(0, 0, col < 4 ? 8*dp : 0, 0);
-                card.setLayoutParams(cp);
-                TextView num = new TextView(this);
-                num.setText("P"+(i+1));
-                num.setTextSize(22);
-                num.setTextColor(0xFF2A2A3E);
-                num.setTypeface(android.graphics.Typeface.MONOSPACE,
+                TextView slot = new TextView(this);
+                slot.setText("P" + (i+1) + "\nEMPTY");
+                slot.setTextSize(14);
+                slot.setTextColor(0xFF2A2A3E);
+                slot.setTypeface(android.graphics.Typeface.MONOSPACE,
                     android.graphics.Typeface.BOLD);
-                num.setGravity(Gravity.CENTER);
-                TextView type = new TextView(this);
-                type.setText("EMPTY");
-                type.setTextSize(9);
-                type.setTextColor(0xFF333333);
-                type.setTypeface(android.graphics.Typeface.MONOSPACE);
-                type.setGravity(Gravity.CENTER);
-                LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                tp.setMargins(0, 4*dp, 0, 0);
-                type.setLayoutParams(tp);
-                TextView axes = new TextView(this);
-                axes.setText("LX:0 LY:0\nRX:0 RY:0");
-                axes.setTextSize(8);
-                axes.setTextColor(0xFF222222);
-                axes.setTypeface(android.graphics.Typeface.MONOSPACE);
-                axes.setGravity(Gravity.CENTER);
-                LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                ap.setMargins(0, 6*dp, 0, 0);
-                axes.setLayoutParams(ap);
-                card.addView(num); card.addView(type); card.addView(axes);
-                rowL.addView(card);
-                cardViews[i]=card; numViews[i]=num;
-                typeViews[i]=type; axesViews[i]=axes;
+                slot.setGravity(Gravity.CENTER);
+                slot.setBackgroundResource(R.drawable.card_empty);
+                LinearLayout.LayoutParams slotP = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+                slotP.setMargins(0, 0, col < 4 ? 8*dp : 0, 0);
+                slot.setLayoutParams(slotP);
+                rowL.addView(slot);
+                slotViews[i] = slot;
             }
-            slotsContainer.addView(rowL);
+            grid.addView(rowL);
         }
+        root.addView(grid);
+
+        // Bottom hint
+        TextView hint = new TextView(this);
+        hint.setText("📱 Open grimpad.vercel.app on mobile → JOIN GAME → enter this TV's IP");
+        hint.setTextSize(10);
+        hint.setTextColor(0xFF1A3A2A);
+        hint.setTypeface(android.graphics.Typeface.MONOSPACE);
+        hint.setGravity(Gravity.CENTER);
+        hint.setBackgroundColor(0xFF0A0A1A);
+        hint.setPadding(12*dp, 8*dp, 12*dp, 8*dp);
+        LinearLayout.LayoutParams hintP = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        hintP.setMargins(0, 10*dp, 0, 0);
+        hint.setLayoutParams(hintP);
+        root.addView(hint);
+
+        setContentView(root);
     }
 
-    private void startDash() {
+    private void connect() {
         if (destroyed) return;
-        String addr = "";
-        if (serverInput != null) addr = serverInput.getText().toString().trim();
-        if (addr.isEmpty()) addr = "localhost:8765";
-        String mu = "";
-        if (mobileUrlInput != null) mu = mobileUrlInput.getText().toString().trim();
-        if (mu.isEmpty()) mu = "https://grimpad.vercel.app";
-        currentUrl = "ws://" + addr;
-        if (serverAddrText != null) serverAddrText.setText(addr);
-        if (mobileUrlDisplay != null) mobileUrlDisplay.setText(mu);
-        if (setupLayout != null) setupLayout.setVisibility(View.GONE);
-        if (dashLayout != null) dashLayout.setVisibility(View.VISIBLE);
-        wsConnect();
-    }
-
-    private void goSetup() {
-        disconnectWS();
-        if (setupLayout != null) setupLayout.setVisibility(View.VISIBLE);
-        if (dashLayout != null) dashLayout.setVisibility(View.GONE);
-    }
-
-    private void wsConnect() {
-        if (destroyed) return;
-        setStatus("Connecting...", false);
+        setStatus("Connecting to localhost:8765...", false);
         try {
-            ws = httpClient.newWebSocket(
-                new Request.Builder().url(currentUrl).build(),
+            ws = client.newWebSocket(
+                new Request.Builder().url("ws://localhost:8765").build(),
                 new WebSocketListener() {
                     @Override public void onOpen(@NonNull WebSocket w, @NonNull Response r) {
                         w.send("{\"type\":\"dashboard_listen\"}");
-                        mainHandler.post(() -> setStatus("● " + currentUrl.replace("ws://",""), true));
+                        h.post(() -> setStatus("● localhost:8765", true));
                     }
-                    @Override public void onMessage(@NonNull WebSocket w, @NonNull String text) {
+                    @Override public void onMessage(@NonNull WebSocket w, @NonNull String t) {
                         try {
-                            JSONObject m = new JSONObject(text);
+                            JSONObject m = new JSONObject(t);
                             if ("gamepad_state".equals(m.optString("type"))) {
                                 JSONArray gps = m.getJSONArray("gamepads");
-                                mainHandler.post(() -> updateSlots(gps));
+                                h.post(() -> updateSlots(gps));
                             }
                         } catch (Exception ignored) {}
                     }
                     @Override public void onClosed(@NonNull WebSocket w, int c, @NonNull String r) {
-                        mainHandler.post(() -> onDisc());
+                        h.post(() -> retry());
                     }
                     @Override public void onFailure(@NonNull WebSocket w, @NonNull Throwable t,
                             Response r) {
-                        mainHandler.post(() -> {
-                            setStatus("○ Server not found — retrying...", false);
-                            onDisc();
+                        h.post(() -> {
+                            setStatus("○ No server — retrying...", false);
+                            retry();
                         });
                     }
                 });
         } catch (Exception e) {
-            setStatus("○ Error: " + e.getMessage(), false);
-            onDisc();
+            setStatus("○ Error — retrying...", false);
+            retry();
         }
     }
 
-    private void onDisc() {
+    private void retry() {
         if (destroyed) return;
         clearSlots();
-        if (reconnectTask != null) mainHandler.removeCallbacks(reconnectTask);
-        reconnectTask = this::wsConnect;
-        mainHandler.postDelayed(reconnectTask, 4000);
-    }
-
-    private void disconnectWS() {
-        if (reconnectTask != null) mainHandler.removeCallbacks(reconnectTask);
-        if (ws != null) { try { ws.cancel(); } catch (Exception ignored) {} ws = null; }
+        if (retryTask != null) h.removeCallbacks(retryTask);
+        retryTask = this::connect;
+        h.postDelayed(retryTask, 4000);
     }
 
     private void setStatus(String t, boolean ok) {
-        if (wsStatusText == null) return;
-        wsStatusText.setText(t);
-        wsStatusText.setTextColor(ok ? 0xFF10B981 : 0xFFEF4444);
+        if (statusView == null) return;
+        statusView.setText(t);
+        statusView.setTextColor(ok ? 0xFF10B981 : 0xFFEF4444);
     }
 
     private void clearSlots() {
-        for (int i = 0; i < 15; i++) { slots[i].active=false; updateCard(i); }
-        updateStats();
+        for (int i = 0; i < 15; i++) {
+            slots[i].active = false;
+            updateSlot(i);
+        }
+        updateCount();
     }
 
     private void updateSlots(JSONArray gamepads) {
@@ -247,68 +242,48 @@ public class TVActivity extends Activity {
             for (int g = 0; g < gamepads.length(); g++) {
                 JSONObject gp = gamepads.getJSONObject(g);
                 int idx = gp.getInt("index");
-                if (idx < 0 || idx >= 15) continue;
-                slots[idx].active = true;
-                slots[idx].is360 = gp.optString("id","").contains("028e");
-                JSONArray ax = gp.optJSONArray("axes");
-                if (ax != null && ax.length() >= 4) {
-                    slots[idx].lx=(float)ax.getDouble(0);
-                    slots[idx].ly=(float)ax.getDouble(1);
-                    slots[idx].rx=(float)ax.getDouble(2);
-                    slots[idx].ry=(float)ax.getDouble(3);
+                if (idx >= 0 && idx < 15) {
+                    slots[idx].active = true;
+                    slots[idx].is360 = gp.optString("id","").contains("028e");
                 }
             }
         } catch (Exception ignored) {}
-        for (int i = 0; i < 15; i++) updateCard(i);
-        updateStats();
+        for (int i = 0; i < 15; i++) updateSlot(i);
+        updateCount();
     }
 
-    private void updateCard(int i) {
-        if (cardViews[i] == null) return;
+    private void updateSlot(int i) {
+        if (slotViews[i] == null) return;
         Slot s = slots[i];
         if (s.active) {
-            cardViews[i].setBackgroundResource(
+            slotViews[i].setBackgroundResource(
                 s.is360 ? R.drawable.card_active_360 : R.drawable.card_active);
-            numViews[i].setTextColor(s.is360 ? 0xFFF5C518 : 0xFF10B981);
-            typeViews[i].setText(s.is360 ? "XBOX 360" : "SERIES X/S");
-            typeViews[i].setTextColor(0xFF888888);
-            axesViews[i].setText(String.format(
-                "LX:%.1f LY:%.1f\nRX:%.1f RY:%.1f",
-                s.lx, s.ly, s.rx, s.ry));
-            axesViews[i].setTextColor(s.is360 ? 0xFF5A4A10 : 0xFF3A6A4A);
+            slotViews[i].setTextColor(s.is360 ? 0xFFF5C518 : 0xFF10B981);
+            slotViews[i].setText("P"+(i+1)+"\n"+(s.is360?"360":"SERIES"));
         } else {
-            cardViews[i].setBackgroundResource(R.drawable.card_empty);
-            numViews[i].setTextColor(0xFF2A2A3E);
-            typeViews[i].setText("EMPTY");
-            typeViews[i].setTextColor(0xFF333333);
-            axesViews[i].setText("LX:0 LY:0\nRX:0 RY:0");
-            axesViews[i].setTextColor(0xFF222222);
+            slotViews[i].setBackgroundResource(R.drawable.card_empty);
+            slotViews[i].setTextColor(0xFF2A2A3E);
+            slotViews[i].setText("P"+(i+1)+"\nEMPTY");
         }
     }
 
-    private void updateStats() {
-        int total=0, series=0, x360=0;
-        for (Slot s : slots) {
-            if (s.active) { total++; if(s.is360) x360++; else series++; }
-        }
-        if (connectedCount != null) connectedCount.setText(String.valueOf(total));
-        if (seriesCount != null) seriesCount.setText(String.valueOf(series));
-        if (x360Count != null) x360Count.setText(String.valueOf(x360));
+    private void updateCount() {
+        if (countView == null) return;
+        int total = 0;
+        for (Slot s : slots) if (s.active) total++;
+        countView.setText(total + " / 15 controllers connected");
+        countView.setTextColor(total > 0 ? 0xFF10B981 : 0xFF2A4A3A);
     }
 
     @Override public boolean onKeyDown(int k, KeyEvent e) {
-        if (k==KeyEvent.KEYCODE_BACK &&
-            dashLayout != null &&
-            dashLayout.getVisibility()==View.VISIBLE) {
-            goSetup(); return true;
-        }
         return super.onKeyDown(k, e);
     }
 
     @Override protected void onDestroy() {
         destroyed = true;
         super.onDestroy();
-        disconnectWS();
-        try { httpClient.dispatcher().executorService().shutdown(); } catch (Exception ignored) {}
+        if (retryTask != null) h.removeCallbacks(retryTask);
+        if (ws != null) { try { ws.cancel(); } catch (Exception ignored) {} }
+        try { client.dispatcher().executorService().shutdown(); } catch (Exception ignored) {}
     }
 }
